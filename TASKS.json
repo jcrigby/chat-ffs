@@ -1,0 +1,75 @@
+{
+  "project": "chat-ffs",
+  "tasks": [
+    {
+      "id": "01-project-setup",
+      "name": "Project Setup",
+      "description": "Initialize Python project with pyproject.toml and package structure",
+      "work_prompt": "Create the Python project structure for chat-ffs:\n\n1. Create pyproject.toml with:\n   - name: chat-ffs\n   - version: 0.1.0\n   - requires-python: >=3.10\n   - dependencies: click>=8.0\n   - optional dev dependencies: pytest, pytest-cov, black, ruff, mypy\n   - entry point: chat-ffs = chat_ffs.cli:main\n\n2. Create src/chat_ffs/ directory with:\n   - __init__.py (with __version__ = \"0.1.0\")\n   - cli.py (stub with main() that prints \"chat-ffs v0.1.0\")\n\n3. Create tests/ directory with empty __init__.py\n\nRefer to ERD.md for the full file structure.",
+      "test_prompt": "Verify the project setup is correct:\n\n1. Check pyproject.toml exists and has correct structure\n2. Check src/chat_ffs/__init__.py exists with __version__\n3. Check src/chat_ffs/cli.py exists with main function\n4. Run: python -c \"from chat_ffs import __version__; print(__version__)\"\n\nIf all checks pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "02-provider-base",
+      "name": "Provider Base Class",
+      "description": "Create abstract base class for provider parsers",
+      "work_prompt": "Create the base provider class in src/chat_ffs/providers/:\n\n1. Create providers/__init__.py\n\n2. Create providers/base.py with:\n   - Dataclasses: Attachment, Message, Conversation (see ERD.md for schema)\n   - Message has: id, role (Literal[\"user\", \"assistant\", \"system\"]), content, timestamp (datetime), attachments (list)\n   - Conversation has: id, title, created_at, updated_at, provider, messages\n   - Abstract class BaseProvider with:\n     - abstract method: detect(zip_path: Path) -> bool\n     - abstract method: parse(zip_path: Path) -> list[Conversation]\n     - class attribute: provider_name: str\n\nUse dataclasses and typing. Refer to ERD.md for details.",
+      "test_prompt": "Verify the provider base class:\n\n1. Check src/chat_ffs/providers/base.py exists\n2. Run: python -c \"from chat_ffs.providers.base import Message, Conversation, BaseProvider; print('imports ok')\"\n3. Verify Message and Conversation are dataclasses\n4. Verify BaseProvider has abstract methods detect and parse\n\nIf all checks pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "03-claude-provider",
+      "name": "Claude Provider Parser",
+      "description": "Implement parser for Claude chat exports",
+      "work_prompt": "Create the Claude provider parser in src/chat_ffs/providers/claude.py:\n\nClaude export structure (see ERD.md):\n- ZIP contains conversations/ directory\n- Each conversation is a separate JSON file\n- JSON has: uuid, name, created_at, updated_at, chat_messages[]\n- chat_messages have: uuid, sender (\"human\"/\"assistant\"), text, created_at, attachments\n\nImplement ClaudeProvider(BaseProvider):\n- provider_name = \"claude\"\n- detect(): return True if ZIP contains conversations/ directory\n- parse(): extract and parse all conversation JSONs, convert to normalized Conversation objects\n- Map sender \"human\" -> role \"user\", \"assistant\" -> \"assistant\"\n- Parse ISO 8601 timestamps\n\nHandle missing fields gracefully. Log warnings for skipped conversations.",
+      "test_prompt": "Verify the Claude provider:\n\n1. Check src/chat_ffs/providers/claude.py exists\n2. Run: python -c \"from chat_ffs.providers.claude import ClaudeProvider; p = ClaudeProvider(); print(p.provider_name)\"\n3. Verify it prints \"claude\"\n4. Check ClaudeProvider has detect and parse methods\n\nIf all checks pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "04-chatgpt-provider",
+      "name": "ChatGPT Provider Parser",
+      "description": "Implement parser for ChatGPT exports",
+      "work_prompt": "Create the ChatGPT provider parser in src/chat_ffs/providers/chatgpt.py:\n\nChatGPT export structure (see ERD.md):\n- ZIP contains conversations.json with all conversations\n- Each conversation has: title, create_time (unix), update_time, mapping\n- mapping is a tree structure with nodes containing messages\n- Messages have: author.role, content.parts[], create_time\n\nImplement ChatGPTProvider(BaseProvider):\n- provider_name = \"chatgpt\"\n- detect(): return True if ZIP contains conversations.json\n- parse(): parse conversations.json, linearize tree (follow first child), convert to Conversation objects\n- Convert Unix timestamps to datetime\n- Handle the tree linearization as described in TOP.md\n\nHandle missing fields gracefully.",
+      "test_prompt": "Verify the ChatGPT provider:\n\n1. Check src/chat_ffs/providers/chatgpt.py exists\n2. Run: python -c \"from chat_ffs.providers.chatgpt import ChatGPTProvider; p = ChatGPTProvider(); print(p.provider_name)\"\n3. Verify it prints \"chatgpt\"\n4. Check ChatGPTProvider has detect and parse methods\n\nIf all checks pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "05-fs-generator",
+      "name": "Filesystem Generator",
+      "description": "Generate ffs-compatible JSON from normalized conversations",
+      "work_prompt": "Create src/chat_ffs/fs_generator.py:\n\nThis module transforms normalized Conversation objects into ffs-compatible JSON.\n\nImplement:\n- slugify(title: str, max_len: int = 50) -> str: filesystem-safe slug\n- generate_dirname(conv: Conversation) -> str: \"{YYYY-MM-DD}_{slug}\" format\n- generate_fs_json(conversations: list[Conversation]) -> dict: \n  - Creates the nested dict structure for ffs\n  - Each conversation becomes a directory\n  - Messages become files: {NNN}_{role}.md\n  - Include _metadata.json per conversation\n  - Include _index.json at root\n  - Handle duplicate directory names with _2, _3 suffix\n\nRefer to ERD.md and TOP.md for the exact structure.",
+      "test_prompt": "Verify the filesystem generator:\n\n1. Check src/chat_ffs/fs_generator.py exists\n2. Run: python -c \"from chat_ffs.fs_generator import slugify, generate_dirname, generate_fs_json; print('imports ok')\"\n3. Test slugify: python -c \"from chat_ffs.fs_generator import slugify; assert slugify('Hello World!') == 'hello-world', 'slugify failed'\"\n\nIf all checks pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "06-mount-manager",
+      "name": "Mount Manager",
+      "description": "Implement ffs process management for mounting/unmounting",
+      "work_prompt": "Create src/chat_ffs/mount.py:\n\nThis module manages ffs subprocess lifecycle.\n\nImplement:\n- check_ffs_available() -> bool: verify ffs binary exists in PATH\n- check_fuse_available() -> bool: verify FUSE is available (platform-specific)\n- create_temp_dir() -> Path: create /tmp/chat-ffs-{uuid}/ directory\n- mount(json_path: Path, mountpoint: Path, readonly: bool = True) -> subprocess.Popen:\n  - Spawn ffs with appropriate args\n  - Return process handle\n- unmount(mountpoint: Path) -> None:\n  - Use fusermount -u (Linux) or umount (macOS)\n- cleanup_temp_dir(temp_dir: Path) -> None: remove temp directory\n\nRefer to ERD.md for implementation details.",
+      "test_prompt": "Verify the mount manager:\n\n1. Check src/chat_ffs/mount.py exists\n2. Run: python -c \"from chat_ffs.mount import check_ffs_available, create_temp_dir, mount, unmount; print('imports ok')\"\n3. Test create_temp_dir creates a directory in /tmp/\n\nIf all checks pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "07-cli",
+      "name": "CLI Implementation",
+      "description": "Implement the full CLI with mount, unmount, info, export commands",
+      "work_prompt": "Update src/chat_ffs/cli.py with full CLI using Click:\n\nCommands:\n- chat-ffs mount <zipfile> <mountpoint> [--provider auto|claude|chatgpt] [--readonly]\n  - Detect or use specified provider\n  - Parse ZIP, generate fs JSON, mount via ffs\n  - Print success message with mountpoint\n\n- chat-ffs unmount <mountpoint>\n  - Unmount and cleanup\n\n- chat-ffs info <zipfile>\n  - Show export metadata without mounting\n  - Conversation count, date range, provider\n\n- chat-ffs export <zipfile> <outdir>\n  - Extract to flat files without FUSE\n  - Same directory structure as mounted view\n\nUse Click for argument parsing. Add --help for all commands. Handle errors gracefully with user-friendly messages.\n\nRefer to ERD.md for command specifications.",
+      "test_prompt": "Verify the CLI:\n\n1. Check src/chat_ffs/cli.py has been updated\n2. Run: python -m chat_ffs --help\n3. Verify it shows mount, unmount, info, export commands\n4. Run: python -m chat_ffs mount --help\n5. Verify it shows --provider and --readonly options\n\nIf all checks pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "08-test-fixtures",
+      "name": "Test Fixtures",
+      "description": "Create sample export fixtures for testing",
+      "work_prompt": "Create test fixtures in tests/fixtures/:\n\n1. Create tests/fixtures/claude_sample/ directory with:\n   - conversations/conv1.json - sample conversation with 3 messages\n   - conversations/conv2.json - sample conversation with 5 messages\n   - Use realistic but fake data\n   - Include various edge cases: unicode, code blocks, long messages\n\n2. Create tests/fixtures/chatgpt_sample/ directory with:\n   - conversations.json - 2 conversations in ChatGPT format\n   - Include the tree structure with mapping\n   - Add at least one branching conversation\n\n3. Create a script tests/fixtures/make_zips.py that zips these into:\n   - tests/fixtures/claude_sample.zip\n   - tests/fixtures/chatgpt_sample.zip\n\nRun the script to generate the ZIPs.",
+      "test_prompt": "Verify the test fixtures:\n\n1. Check tests/fixtures/claude_sample.zip exists\n2. Check tests/fixtures/chatgpt_sample.zip exists\n3. Verify claude ZIP contains conversations/ directory\n4. Verify chatgpt ZIP contains conversations.json\n\nIf all checks pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "09-unit-tests",
+      "name": "Unit Tests",
+      "description": "Write unit tests for all modules",
+      "work_prompt": "Create unit tests in tests/:\n\n1. tests/test_providers.py:\n   - Test ClaudeProvider.detect() with sample ZIP\n   - Test ClaudeProvider.parse() returns correct Conversation objects\n   - Test ChatGPTProvider.detect() with sample ZIP\n   - Test ChatGPTProvider.parse() with tree linearization\n\n2. tests/test_fs_generator.py:\n   - Test slugify() with various inputs\n   - Test generate_dirname() format\n   - Test generate_fs_json() structure\n   - Test duplicate directory name handling\n\n3. tests/test_mount.py:\n   - Test create_temp_dir() creates directory\n   - Test cleanup_temp_dir() removes directory\n   - Mock tests for mount/unmount (don't require actual FUSE)\n\nUse pytest. Use the fixtures from tests/fixtures/.",
+      "test_prompt": "Verify the unit tests:\n\n1. Check tests/test_providers.py exists\n2. Check tests/test_fs_generator.py exists\n3. Check tests/test_mount.py exists\n4. Run: python -m pytest tests/ -v --tb=short\n5. Verify all tests pass\n\nIf all tests pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    },
+    {
+      "id": "10-integration-test",
+      "name": "Integration Test",
+      "description": "End-to-end test of the export command (no FUSE required)",
+      "work_prompt": "Create tests/test_integration.py:\n\nTest the full pipeline without requiring FUSE:\n\n1. Test export command with Claude sample:\n   - Run: chat-ffs export tests/fixtures/claude_sample.zip /tmp/test-export-claude/\n   - Verify directory structure matches expected\n   - Verify message files contain correct content\n   - Clean up after test\n\n2. Test export command with ChatGPT sample:\n   - Run: chat-ffs export tests/fixtures/chatgpt_sample.zip /tmp/test-export-chatgpt/\n   - Verify directory structure\n   - Verify linearization worked correctly\n   - Clean up after test\n\n3. Test info command with both samples:\n   - Verify correct conversation counts\n   - Verify provider detection\n\nUse subprocess to run CLI commands. Use pytest tmp_path fixture for cleanup.",
+      "test_prompt": "Verify the integration tests:\n\n1. Check tests/test_integration.py exists\n2. Run: python -m pytest tests/test_integration.py -v\n3. Verify all integration tests pass\n\nIf all tests pass, create file .task_result with content \"PASS\". If any fail, create .task_result with content \"FAIL: <reason>\"."
+    }
+  ]
+}
