@@ -81,7 +81,7 @@ run_claude() {
     
     # Run claude in print mode (one-shot, no interaction)
     # The --print flag outputs response and exits
-    claude --print "$prompt"
+    claude --print --dangerously-skip-permissions "$prompt"
     
     return $?
 }
