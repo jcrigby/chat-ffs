@@ -6,7 +6,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from .base import Attachment, BaseProvider, Conversation, Message, Project, ProjectDoc
+from .base import Attachment, BaseProvider, Conversation, Memories, Message, Project, ProjectDoc
 
 logger = logging.getLogger(__name__)
 
@@ -398,3 +398,38 @@ class ClaudeProvider(BaseProvider):
             content=content,
             created_at=created_at,
         )
+
+    def parse_memories(self, zip_path: Path) -> Memories | None:
+        """Parse memories.json from Claude export.
+
+        Args:
+            zip_path: Path to the ZIP export file.
+
+        Returns:
+            Memories object or None if not found.
+        """
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                if "memories.json" not in zf.namelist():
+                    return None
+
+                with zf.open("memories.json") as f:
+                    data = json.load(f)
+
+                if not isinstance(data, list) or len(data) == 0:
+                    return None
+
+                # memories.json is a list with typically one entry
+                memory_data = data[0]
+
+                conversations_memory = memory_data.get("conversations_memory", "")
+                project_memories = memory_data.get("project_memories", {})
+
+                return Memories(
+                    conversations_memory=conversations_memory,
+                    project_memories=project_memories,
+                )
+
+        except (zipfile.BadZipFile, OSError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to read memories from {zip_path}: {e}")
+            return None

@@ -168,12 +168,16 @@ def mount(zipfile: Path, mountpoint: Path, provider: str, readonly: bool):
 
         click.echo(f"Found {len(conversations)} conversation(s)")
 
-        # Parse projects if Claude provider
+        # Parse projects and memories if Claude provider
         projects = None
+        memories = None
         if provider == "claude":
             projects = provider_instance.parse_projects(zipfile)
             if projects:
                 click.echo(f"Found {len(projects)} project(s)")
+            memories = provider_instance.parse_memories(zipfile)
+            if memories:
+                click.echo(f"Found memories ({len(memories.project_memories)} project memories)")
 
     except Exception as e:
         click.echo(f"Error parsing export: {e}", err=True)
@@ -181,7 +185,7 @@ def mount(zipfile: Path, mountpoint: Path, provider: str, readonly: bool):
 
     # Generate filesystem JSON
     try:
-        fs_json = generate_fs_json(conversations, projects)
+        fs_json = generate_fs_json(conversations, projects, memories)
         temp_dir = create_temp_dir()
         json_path = temp_dir / "fs.json"
 
@@ -265,10 +269,12 @@ def info(zipfile: Path, provider: str):
         provider_instance = get_provider(provider)
         conversations = provider_instance.parse(zipfile)
 
-        # Parse projects if Claude provider
+        # Parse projects and memories if Claude provider
         projects = []
+        memories = None
         if provider == "claude":
             projects = provider_instance.parse_projects(zipfile)
+            memories = provider_instance.parse_memories(zipfile)
 
     except Exception as e:
         click.echo(f"Error parsing export: {e}", err=True)
@@ -299,6 +305,9 @@ def info(zipfile: Path, provider: str):
         total_docs = sum(len(p.docs) for p in projects)
         click.echo(f"Projects: {len(projects)}")
         click.echo(f"Project documents: {total_docs}")
+
+    if memories:
+        click.echo(f"Memories: Yes ({len(memories.project_memories)} project memories)")
 
 
 @main.command()
@@ -348,12 +357,16 @@ def export(zipfile: Path, outdir: Path, provider: str):
 
         click.echo(f"Found {len(conversations)} conversation(s)")
 
-        # Parse projects if Claude provider
+        # Parse projects and memories if Claude provider
         projects = None
+        memories = None
         if provider == "claude":
             projects = provider_instance.parse_projects(zipfile)
             if projects:
                 click.echo(f"Found {len(projects)} project(s)")
+            memories = provider_instance.parse_memories(zipfile)
+            if memories:
+                click.echo(f"Found memories ({len(memories.project_memories)} project memories)")
 
     except Exception as e:
         click.echo(f"Error parsing export: {e}", err=True)
@@ -361,7 +374,7 @@ def export(zipfile: Path, outdir: Path, provider: str):
 
     # Generate filesystem structure
     try:
-        fs_json = generate_fs_json(conversations, projects)
+        fs_json = generate_fs_json(conversations, projects, memories)
 
     except Exception as e:
         click.echo(f"Error generating filesystem structure: {e}", err=True)

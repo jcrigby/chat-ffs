@@ -62,6 +62,14 @@ class Project:
     docs: list[ProjectDoc] = field(default_factory=list)
 
 
+@dataclass
+class Memories:
+    """Represents Claude's saved memories about the user."""
+
+    conversations_memory: str
+    project_memories: dict[str, str] = field(default_factory=dict)  # project_id -> memory
+
+
 class BaseProvider(ABC):
     """Abstract base class for provider-specific parsers."""
 

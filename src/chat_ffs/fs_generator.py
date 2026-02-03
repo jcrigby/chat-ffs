@@ -9,7 +9,7 @@ import re
 import unicodedata
 from datetime import datetime
 
-from .providers.base import Conversation, Project
+from .providers.base import Conversation, Memories, Project
 
 
 def slugify(title: str, max_len: int = 50) -> str:
@@ -79,12 +79,17 @@ def _generate_metadata(conv: Conversation) -> str:
     return json.dumps(metadata, indent=2)
 
 
-def _generate_index(conversations: list[Conversation], projects: list[Project] | None = None) -> str:
-    """Generate _index.json content listing all conversations and projects.
+def _generate_index(
+    conversations: list[Conversation],
+    projects: list[Project] | None = None,
+    memories: Memories | None = None,
+) -> str:
+    """Generate _index.json content listing all conversations, projects, and memories.
 
     Args:
         conversations: List of all conversations.
         projects: Optional list of all projects.
+        memories: Optional memories object.
 
     Returns:
         JSON string containing the index.
@@ -115,6 +120,10 @@ def _generate_index(conversations: list[Conversation], projects: list[Project] |
             }
             for proj in projects
         ]
+
+    if memories:
+        index["has_memories"] = True
+        index["project_memory_count"] = len(memories.project_memories)
 
     return json.dumps(index, indent=2)
 
@@ -176,8 +185,9 @@ def _generate_projects_index(projects: list[Project]) -> str:
 def generate_fs_json(
     conversations: list[Conversation],
     projects: list[Project] | None = None,
+    memories: Memories | None = None,
 ) -> dict:
-    """Generate ffs-compatible JSON from conversations and projects.
+    """Generate ffs-compatible JSON from conversations, projects, and memories.
 
     Creates a nested dictionary structure where:
     - Each conversation becomes a directory named {YYYY-MM-DD}_{slug}
@@ -185,12 +195,14 @@ def generate_fs_json(
     - Each conversation directory contains _metadata.json
     - Root contains _index.json
     - Projects are in _projects/ directory with their attached docs
+    - Memories are in _memories/ directory
 
     Duplicate directory names are handled with _2, _3 suffixes.
 
     Args:
         conversations: List of normalized conversations.
         projects: Optional list of projects with attached documents.
+        memories: Optional memories object with conversation and project memories.
 
     Returns:
         A dictionary that ffs can mount as a filesystem.
@@ -228,8 +240,13 @@ def generate_fs_json(
         projects_dir = _generate_projects_fs(projects)
         fs["_projects"] = projects_dir
 
+    # Add memories if present
+    if memories:
+        memories_dir = _generate_memories_fs(memories, projects)
+        fs["_memories"] = memories_dir
+
     # Add root index
-    fs["_index.json"] = _generate_index(conversations, projects)
+    fs["_index.json"] = _generate_index(conversations, projects, memories)
 
     return fs
 
@@ -284,3 +301,85 @@ def _generate_projects_fs(projects: list[Project]) -> dict:
     projects_fs["_index.json"] = _generate_projects_index(projects)
 
     return projects_fs
+
+
+def _generate_memories_fs(memories: Memories, projects: list[Project] | None = None) -> dict:
+    """Generate the _memories directory structure.
+
+    Args:
+        memories: Memories object containing conversation and project memories.
+        projects: Optional list of projects to map UUIDs to names.
+
+    Returns:
+        Dictionary representing the _memories directory.
+    """
+    memories_fs: dict[str, str | dict] = {}
+
+    # Add main conversations memory
+    if memories.conversations_memory:
+        memories_fs["conversations.md"] = memories.conversations_memory
+
+    # Add project memories
+    if memories.project_memories:
+        # Build UUID to name mapping from projects
+        project_names: dict[str, str] = {}
+        if projects:
+            for proj in projects:
+                project_names[proj.id] = proj.name
+
+        projects_memories_dir: dict[str, str] = {}
+        for proj_id, memory_content in memories.project_memories.items():
+            # Try to get project name, fall back to UUID
+            proj_name = project_names.get(proj_id, proj_id[:8])
+            filename = f"{slugify(proj_name)}.md"
+
+            # Handle duplicates
+            if filename in projects_memories_dir:
+                base = filename[:-3]  # remove .md
+                counter = 2
+                while f"{base}_{counter}.md" in projects_memories_dir:
+                    counter += 1
+                filename = f"{base}_{counter}.md"
+
+            projects_memories_dir[filename] = memory_content
+
+        if projects_memories_dir:
+            memories_fs["projects"] = projects_memories_dir
+
+    # Add memories index
+    memories_fs["_index.json"] = _generate_memories_index(memories, projects)
+
+    return memories_fs
+
+
+def _generate_memories_index(memories: Memories, projects: list[Project] | None = None) -> str:
+    """Generate _index.json content for the memories directory.
+
+    Args:
+        memories: Memories object.
+        projects: Optional list of projects to map UUIDs to names.
+
+    Returns:
+        JSON string containing the memories index.
+    """
+    # Build UUID to name mapping
+    project_names: dict[str, str] = {}
+    if projects:
+        for proj in projects:
+            project_names[proj.id] = proj.name
+
+    index = {
+        "generated_at": datetime.now().isoformat(),
+        "has_conversations_memory": bool(memories.conversations_memory),
+        "conversations_memory_length": len(memories.conversations_memory),
+        "project_memory_count": len(memories.project_memories),
+        "project_memories": [
+            {
+                "project_id": proj_id,
+                "project_name": project_names.get(proj_id, "Unknown"),
+                "memory_length": len(content),
+            }
+            for proj_id, content in memories.project_memories.items()
+        ],
+    }
+    return json.dumps(index, indent=2)
