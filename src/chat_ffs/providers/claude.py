@@ -6,7 +6,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from .base import Attachment, BaseProvider, Conversation, Message
+from .base import Attachment, BaseProvider, Conversation, Message, Project, ProjectDoc
 
 logger = logging.getLogger(__name__)
 
@@ -291,3 +291,110 @@ class ClaudeProvider(BaseProvider):
         except ValueError as e:
             logger.warning(f"Failed to parse timestamp '{ts}': {e}")
             return None
+
+    def parse_projects(self, zip_path: Path) -> list[Project]:
+        """Parse projects.json from Claude export.
+
+        Args:
+            zip_path: Path to the ZIP export file.
+
+        Returns:
+            List of Project objects parsed from the export.
+        """
+        projects: list[Project] = []
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                if "projects.json" not in zf.namelist():
+                    return projects
+
+                with zf.open("projects.json") as f:
+                    data = json.load(f)
+
+                if not isinstance(data, list):
+                    logger.error("projects.json is not a list")
+                    return projects
+
+                for i, proj_data in enumerate(data):
+                    try:
+                        project = self._parse_project(proj_data, f"project[{i}]")
+                        if project:
+                            projects.append(project)
+                    except Exception as e:
+                        logger.warning(f"Skipping project[{i}]: {e}")
+
+        except (zipfile.BadZipFile, OSError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to read projects from {zip_path}: {e}")
+
+        return projects
+
+    def _parse_project(self, data: dict, source: str) -> Project | None:
+        """Parse a single project from its JSON data.
+
+        Args:
+            data: Dictionary containing project data.
+            source: Source identifier for logging.
+
+        Returns:
+            Project object or None if parsing fails.
+        """
+        proj_id = data.get("uuid")
+        if not proj_id:
+            logger.warning(f"Project {source} missing uuid, skipping")
+            return None
+
+        name = data.get("name", "Untitled Project")
+        description = data.get("description", "")
+        created_at = self._parse_timestamp(data.get("created_at"))
+        updated_at = self._parse_timestamp(data.get("updated_at"))
+
+        if not created_at:
+            logger.warning(f"Project {source} missing created_at, skipping")
+            return None
+
+        if not updated_at:
+            updated_at = created_at
+
+        # Parse docs
+        docs: list[ProjectDoc] = []
+        for doc_data in data.get("docs", []):
+            doc = self._parse_project_doc(doc_data)
+            if doc:
+                docs.append(doc)
+
+        return Project(
+            id=proj_id,
+            name=name,
+            description=description,
+            created_at=created_at,
+            updated_at=updated_at,
+            docs=docs,
+        )
+
+    def _parse_project_doc(self, data: dict) -> ProjectDoc | None:
+        """Parse a project document.
+
+        Args:
+            data: Dictionary containing document data.
+
+        Returns:
+            ProjectDoc object or None if parsing fails.
+        """
+        doc_id = data.get("uuid", "")
+        filename = data.get("filename", "")
+        content = data.get("content", "")
+        created_at = self._parse_timestamp(data.get("created_at"))
+
+        if not filename:
+            return None
+
+        if not created_at:
+            from datetime import timezone
+            created_at = datetime.now(timezone.utc)
+
+        return ProjectDoc(
+            id=doc_id,
+            filename=filename,
+            content=content,
+            created_at=created_at,
+        )
